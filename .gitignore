@@ -23,6 +23,9 @@ build/
 # Gradle wrapper jar (must be committed)
 !**/gradle/wrapper/gradle-wrapper.jar
 
+# Agents
+CLAUDE.md
+
 # Kotlin Gradle plugin data
 .kotlin/
 
