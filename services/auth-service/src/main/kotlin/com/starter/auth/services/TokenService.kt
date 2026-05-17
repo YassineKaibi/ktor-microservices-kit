@@ -4,6 +4,9 @@ import com.auth0.jwt.JWT
 import com.auth0.jwt.algorithms.Algorithm
 import com.auth0.jwt.interfaces.DecodedJWT
 import redis.clients.jedis.JedisPool
+import redis.clients.jedis.params.SetParams
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import java.util.*
 
 class TokenService(
@@ -46,16 +49,21 @@ class TokenService(
         }
     }
 
-    fun blacklist(jti: String, expiresAt: Date) {
+    suspend fun blacklist(jti: String, expiresAt: Date): Boolean {
         val ttlSeconds = ((expiresAt.time - System.currentTimeMillis()) / 1000).coerceAtLeast(1)
-        redisPool.resource.use { jedis ->
-            jedis.setex("blacklist:$jti", ttlSeconds, "1")
+        return withContext(Dispatchers.IO) {
+            redisPool.resource.use { jedis ->
+                val result = jedis.set("blacklist:$jti", "1", SetParams.setParams().nx().ex(ttlSeconds))
+                result == "OK"
+            }
         }
     }
 
-    fun isBlacklisted(jti: String): Boolean {
-        redisPool.resource.use { jedis ->
-            return jedis.exists("blacklist:$jti")
+    suspend fun isBlacklisted(jti: String): Boolean {
+        return withContext(Dispatchers.IO) {
+            redisPool.resource.use { jedis ->
+                return@use jedis.exists("blacklist:$jti")
+            }
         }
     }
 }
