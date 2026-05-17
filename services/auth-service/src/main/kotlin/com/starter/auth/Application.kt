@@ -45,7 +45,12 @@ fun Application.module() {
     )
 
     val userRepository = PostgresUserRepository()
-    val authService = AuthService(userRepository, tokenService)
+    val authService = AuthService(
+        userRepository,
+        tokenService,
+        bcryptCost = environment.config.property("auth.bcryptCost").getString().toInt(),
+        accessExpirationMs = jwtConfig.property("accessExpirationMs").getString().toLong()
+    )
 
     configureAuth(tokenService)
 

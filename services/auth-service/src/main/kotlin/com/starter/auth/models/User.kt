@@ -8,13 +8,15 @@ object Users : LongIdTable("users") {
     val email = varchar("email", 255).uniqueIndex()
     val passwordHash = varchar("password_hash", 255)
     val createdAt = timestamp("created_at")
+    val updatedAt = timestamp("updated_at")
 }
 
 data class User(
     val id: Long,
     val email: String,
     val passwordHash: String,
-    val createdAt: java.time.Instant
+    val createdAt: java.time.Instant,
+    val updatedAt: java.time.Instant
 )
 
 @Serializable
@@ -37,10 +39,13 @@ data class RefreshRequest(
 @Serializable
 data class TokenResponse(
     val accessToken: String,
-    val refreshToken: String
+    val refreshToken: String,
+    val expiresIn: Long
 )
 
 @Serializable
 data class ErrorResponse(
     val error: String
 )
+
+class EmailAlreadyExistsException(email: String) : RuntimeException("Email already registered: $email")

@@ -1,27 +1,27 @@
 package com.starter.auth.services
 
+import com.starter.auth.models.EmailAlreadyExistsException
 import com.starter.auth.models.TokenResponse
 import com.starter.auth.repository.UserRepository
 import org.mindrot.jbcrypt.BCrypt
+import org.slf4j.LoggerFactory
 
 class AuthService(
     private val userRepository: UserRepository,
-    private val tokenService: TokenService
+    private val tokenService: TokenService,
+    private val bcryptCost: Int,
+    private val accessExpirationMs: Long
 ) {
+    private val log = LoggerFactory.getLogger(AuthService::class.java)
+
     suspend fun register(email: String, password: String): Result<TokenResponse> {
-        if (userRepository.existsByEmail(email)) {
-            return Result.failure(IllegalArgumentException("Email already registered"))
+        return try {
+            val passwordHash = BCrypt.hashpw(password, BCrypt.gensalt(bcryptCost))
+            val user = userRepository.create(email, passwordHash)
+            Result.success(tokensFor(user.id))
+        } catch (e: EmailAlreadyExistsException) {
+            Result.failure(e)
         }
-
-        val passwordHash = BCrypt.hashpw(password, BCrypt.gensalt(12))
-        val user = userRepository.create(email, passwordHash)
-
-        return Result.success(
-            TokenResponse(
-                accessToken = tokenService.generateAccessToken(user.id),
-                refreshToken = tokenService.generateRefreshToken(user.id)
-            )
-        )
     }
 
     suspend fun login(email: String, password: String): Result<TokenResponse> {
@@ -32,15 +32,10 @@ class AuthService(
             return Result.failure(IllegalArgumentException("Invalid credentials"))
         }
 
-        return Result.success(
-            TokenResponse(
-                accessToken = tokenService.generateAccessToken(user.id),
-                refreshToken = tokenService.generateRefreshToken(user.id)
-            )
-        )
+        return Result.success(tokensFor(user.id))
     }
 
-    fun refresh(refreshToken: String): Result<TokenResponse> {
+    suspend fun refresh(refreshToken: String): Result<TokenResponse> {
         val decoded = tokenService.verifyToken(refreshToken)
             ?: return Result.failure(IllegalArgumentException("Invalid refresh token"))
 
@@ -48,23 +43,16 @@ class AuthService(
             return Result.failure(IllegalArgumentException("Invalid refresh token"))
         }
 
-        if (tokenService.isBlacklisted(decoded.id)) {
+        // Atomic claim: if blacklist() returns false, another request already consumed this token.
+        if (!tokenService.blacklist(decoded.id, decoded.expiresAt)) {
             return Result.failure(IllegalArgumentException("Token has been revoked"))
         }
 
-        // Blacklist the old refresh token
-        tokenService.blacklist(decoded.id, decoded.expiresAt)
-
         val userId = decoded.subject.toLong()
-        return Result.success(
-            TokenResponse(
-                accessToken = tokenService.generateAccessToken(userId),
-                refreshToken = tokenService.generateRefreshToken(userId)
-            )
-        )
+        return Result.success(tokensFor(userId))
     }
 
-    fun validateToken(token: String): Result<Long> {
+    suspend fun validateToken(token: String): Result<Long> {
         val decoded = tokenService.verifyToken(token)
             ?: return Result.failure(IllegalArgumentException("Invalid token"))
 
@@ -79,8 +67,18 @@ class AuthService(
         return Result.success(decoded.subject.toLong())
     }
 
-    fun logout(token: String) {
-        val decoded = tokenService.verifyToken(token) ?: return
+    suspend fun logout(token: String) {
+        val decoded = tokenService.verifyToken(token)
+        if (decoded == null) {
+            log.warn("logout called with invalid or expired token")
+            return
+        }
         tokenService.blacklist(decoded.id, decoded.expiresAt)
     }
+
+    private fun tokensFor(userId: Long): TokenResponse = TokenResponse(
+        accessToken = tokenService.generateAccessToken(userId),
+        refreshToken = tokenService.generateRefreshToken(userId),
+        expiresIn = accessExpirationMs / 1000
+    )
 }

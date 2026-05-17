@@ -22,6 +22,17 @@ fun Route.authRoutes(authService: AuthService) {
             return@post
         }
 
+        val emailRegex = Regex("^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}$")
+        if (!emailRegex.matches(request.email)) {
+            call.respond(HttpStatusCode.BadRequest, ErrorResponse("Invalid email format"))
+            return@post
+        }
+
+        if (request.password.length < 8 || request.password.length > 72) {
+            call.respond(HttpStatusCode.BadRequest, ErrorResponse("Password must be 8–72 characters"))
+            return@post
+        }
+
         authService.register(request.email, request.password)
             .onSuccess { tokens ->
                 call.respond(HttpStatusCode.Created, tokens)
@@ -55,25 +66,19 @@ fun Route.authRoutes(authService: AuthService) {
             }
     }
 
-    get("/auth/validate") {
-        val authHeader = call.request.header("Authorization")
-        if (authHeader == null || !authHeader.startsWith("Bearer ")) {
-            call.respond(HttpStatusCode.Unauthorized)
-            return@get
+    authenticate("auth-jwt") {
+        get("/auth/validate") {
+            val principal = call.principal<JWTPrincipal>()!!
+            val tokenType = principal.payload.getClaim("type").asString()
+            if (tokenType != "access") {
+                call.respond(HttpStatusCode.Unauthorized)
+                return@get
+            }
+            val userId = principal.payload.subject
+            call.response.header("X-User-Id", userId)
+            call.respond(HttpStatusCode.OK)
         }
 
-        val token = authHeader.removePrefix("Bearer ")
-        authService.validateToken(token)
-            .onSuccess { userId ->
-                call.response.header("X-User-Id", userId.toString())
-                call.respond(HttpStatusCode.OK)
-            }
-            .onFailure {
-                call.respond(HttpStatusCode.Unauthorized)
-            }
-    }
-
-    authenticate("auth-jwt") {
         post("/auth/logout") {
             val authHeader = call.request.header("Authorization")!!
             val token = authHeader.removePrefix("Bearer ")
