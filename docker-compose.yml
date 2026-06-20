@@ -56,19 +56,16 @@ services:
       context: ./services/user-service
     environment:
       PORT: 8082
+      REPO_BACKEND: ${REPO_BACKEND:-postgres}
       DB_HOST: postgres
       DB_PORT: 5432
       DB_NAME: ${USER_DB:-user_db}
       DB_USER: ${DB_USER:-postgres}
       DB_PASSWORD: ${DB_PASSWORD:-postgres}
-      REDIS_HOST: ${REDIS_HOST:-redis}
-      REDIS_PORT: ${REDIS_PORT:-6379}
     ports:
       - "8082:8082"
     depends_on:
       postgres:
-        condition: service_healthy
-      redis:
         condition: service_healthy
 
   crud-service:
@@ -76,19 +73,16 @@ services:
       context: ./services/crud-service
     environment:
       PORT: 8083
+      REPO_BACKEND: ${REPO_BACKEND:-postgres}
       DB_HOST: postgres
       DB_PORT: 5432
       DB_NAME: ${CRUD_DB:-crud_db}
       DB_USER: ${DB_USER:-postgres}
       DB_PASSWORD: ${DB_PASSWORD:-postgres}
-      REDIS_HOST: ${REDIS_HOST:-redis}
-      REDIS_PORT: ${REDIS_PORT:-6379}
     ports:
       - "8083:8083"
     depends_on:
       postgres:
-        condition: service_healthy
-      redis:
         condition: service_healthy
 
   nginx:

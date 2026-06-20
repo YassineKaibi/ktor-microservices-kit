@@ -10,8 +10,9 @@ COPY src ./src
 RUN gradle buildFatJar --no-daemon
 
 # Stage 3: Runtime
-FROM amazoncorretto:21-alpine
+FROM --platform=linux/amd64 amazoncorretto:21-alpine
 WORKDIR /app
 COPY --from=build /app/build/libs/*-all.jar app.jar
 EXPOSE 8082
-ENTRYPOINT ["java", "-jar", "app.jar"]
+# Respect Kubernetes container memory limits instead of host RAM.
+ENTRYPOINT ["java", "-XX:+UseContainerSupport", "-XX:MaxRAMPercentage=75.0", "-jar", "app.jar"]
