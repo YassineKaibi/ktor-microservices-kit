@@ -8,20 +8,14 @@ import io.ktor.server.auth.jwt.*
 import io.ktor.server.request.*
 import io.ktor.server.response.*
 import io.ktor.server.routing.*
-import org.jetbrains.exposed.sql.transactions.experimental.newSuspendedTransaction
 
-fun Route.authRoutes(authService: AuthService) {
+fun Route.authRoutes(authService: AuthService, readinessCheck: suspend () -> Boolean) {
     get("/auth/health") {
         call.respond(mapOf("status" to "ok"))
     }
 
     get("/auth/ready") {
-        val ready = try {
-            newSuspendedTransaction { exec("SELECT 1") }
-            true
-        } catch (e: Exception) {
-            false
-        }
+        val ready = readinessCheck()
         if (ready) {
             call.respond(mapOf("status" to "ready"))
         } else {
