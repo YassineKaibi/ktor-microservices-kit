@@ -1,0 +1,52 @@
+# Thin CI feeder into ArgoCD. Builds + pushes images to ECR, then bumps
+# image.tag in the GitOps repo. Never runs helm or touches the cluster:
+# ArgoCD Auto-Sync + Self-Heal stay the single source of truth.
+
+name: ci-feeder
+
+on:
+  push:
+    branches: [MVP]
+
+# Auto-commit lands on main, so serialize to avoid a non-fast-forward push race.
+concurrency:
+  group: ci-feeder-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  build-and-promote:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: eu-west-2
+
+      # Needed so `docker buildx build --push` works on the hosted runner.
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Build and push images
+        run: bash build-images.sh --push --tag "dev-${GITHUB_SHA::7}"
+
+      - name: Promote tag in GitOps repo
+        run: |
+          set -euo pipefail
+          TAG="dev-${GITHUB_SHA::7}"
+          git clone --depth 1 \
+            "https://x-access-token:${{ secrets.GITOPS_PAT }}@github.com/YassineKaibi/smartovate-eks-project" infra
+          cd infra
+          for svc in auth user crud; do
+            f="helm/microservice/values-${svc}-staging.yaml"
+            test -f "$f" || { echo "missing $f" >&2; exit 1; }
+            yq -i ".image.tag = \"$TAG\"" "$f"
+          done
+          git config user.name  "ci-bot"
+          git config user.email "ci-bot@smartovate.local"
+          git commit -am "chore(staging): promote to $TAG" || { echo "no change"; exit 0; }
+          git push
